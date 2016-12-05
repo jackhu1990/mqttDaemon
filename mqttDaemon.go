@@ -16,7 +16,7 @@ var clientid = flag.String("clientid", "NodeHopeMqttDaemon", "A clientid for the
 var user = flag.String("user", "wifi", "username")
 var pass = flag.String("pass", "68008232", "password")
 var topic = flag.String("topic", "mqttdaemon", "topic")
-var emqttShellPath = flag.String("emqttShellPath", "/usr/emqttd/bin/emqttd", "emqtt shell")
+var emqttShellPath = flag.String("emqttShellPath", "/Users/kitty/Downloads/emqttd/bin/emqttd", "emqtt shell")
 
 type mqttDaemon struct{
 	aliveCount int64
@@ -89,11 +89,13 @@ func (this *mqttDaemon)updateAlive(){
 func main() {
 	flag.Parse()
 	log.SetFlags(0)
-	var damon mqttDaemon
-	damon.init()
+	//var damon mqttDaemon
+	//damon.init()
 	//死循环更新数据
 	for {
-		damon.updateAlive()
+		//启动mqtt程序
+		cmd := exec.Command("/bin/bash", "-c", *emqttShellPath + " start")
+		cmd.Run()
 		time.Sleep(1000 * time.Millisecond)
 	}
 }

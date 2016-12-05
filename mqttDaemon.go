@@ -16,8 +16,7 @@ var clientid = flag.String("clientid", "NodeHopeMqttDaemon", "A clientid for the
 var user = flag.String("user", "wifi", "username")
 var pass = flag.String("pass", "68008232", "password")
 var topic = flag.String("topic", "mqttdaemon", "topic")
-var mqttBin = flag.String("mqttBin", "/usr/emqttd/bin/emqttd", "mqttBin like /usr/emqttd/bin/emqttd start")
-var mqttBinParamter = flag.String("mqttBinParamter", "console", "mqttBin mqttBinParamter")
+var emqttShellPath = flag.String("emqttShellPath", "/usr/emqttd/bin/emqttd", "emqtt shell")
 
 type mqttDaemon struct{
 	aliveCount int64
@@ -50,14 +49,11 @@ func (this *mqttDaemon)OnConnectHandler(client mqtt.Client){
 
 func (this *mqttDaemon)ConnectionLostHandler(client mqtt.Client, err error){
 	fmt.Println("连接断开" + err.Error())
+	this.aliveCount = 0
 	//启动mqtt程序
-	dateCmd := exec.Command(*mqttBin, *mqttBinParamter)
-	dateOut, err := dateCmd.Output()
-	if err != nil {
-		fmt.Println("启动mqtt：" + *mqttBin + " " + *mqttBinParamter + "失败！error:" + err.Error())
-	}else{
-		fmt.Println("启动mqtt：成功， output：" + string(dateOut))
-	}
+	cmd := exec.Command("/bin/bash", "-c", *emqttShellPath + " start")
+	cmd.Run()
+
 }
 
 func(this *mqttDaemon)conn(){
@@ -74,7 +70,7 @@ func(this *mqttDaemon)conn(){
 		OnConnectionLost:       this.ConnectionLostHandler,
 		TLSConfig:            tls.Config{InsecureSkipVerify: true, ClientAuth: tls.NoClientCert},
 	}
-	connOpts.AddBroker("tcp://101.201.37.95:" + *mqttPort)
+	connOpts.AddBroker("tcp://127.0.0.1:" + *mqttPort)
 	this.client = mqtt.NewClient(connOpts)
 	if token := this.client.Connect(); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
@@ -97,7 +93,7 @@ func main() {
 	damon.init()
 	//死循环更新数据
 	for {
-		time.Sleep(1000 * time.Millisecond)
 		damon.updateAlive()
+		time.Sleep(1000 * time.Millisecond)
 	}
 }

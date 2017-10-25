@@ -1,16 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
 	"flag"
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
+	"io"
 	"log"
 	"os/exec"
-	"time"
 	"sync"
-	"bufio"
-	"io"
+	"time"
 )
 
 var mqttPort = flag.String("mqttPort", "61613", "mqttPort of broker")
@@ -19,23 +19,24 @@ var clientid = flag.String("clientid", "NodeHopeMqttDaemon", "A clientid for the
 var user = flag.String("user", "wifi", "username")
 var pass = flag.String("pass", "68008232", "password")
 var topic = flag.String("topic", "mqttdaemon", "topic")
-var emqttShellPath = flag.String("emqttShellPath", "/usr/emqttd/bin/emqttd", "emqtt shell")
+//var emqttShellPath = flag.String("emqttShellPath", "/Users/kitty/Downloads/emqttd/bin/emqttd", "emqtt shell")
+//execCommand("/bin/bash", "-c", *emqttShellPath+" start")
 
-type mqttDaemon struct{
+type mqttDaemon struct {
 	aliveCount int64
-	client mqtt.Client;
+	client     mqtt.Client
 
 	aliveCountMux sync.Mutex
 }
 
-func(this *mqttDaemon)timerCheck(){
+func (this *mqttDaemon) timerCheck() {
 	for {
 		time.Sleep(3000 * time.Millisecond)
-		this.updateAlive();
+		this.updateAlive()
 	}
 }
 
-func (this *mqttDaemon)init(){
+func (this *mqttDaemon) init() {
 	connOpts := &mqtt.ClientOptions{
 		ClientID:             *clientid,
 		CleanSession:         true,
@@ -45,8 +46,8 @@ func (this *mqttDaemon)init(){
 		AutoReconnect:        true,
 		MaxReconnectInterval: 3 * time.Second,
 		KeepAlive:            30 * time.Second,
-		OnConnect:              this.OnConnectHandler,
-		OnConnectionLost:       this.ConnectionLostHandler,
+		OnConnect:            this.OnConnectHandler,
+		OnConnectionLost:     this.ConnectionLostHandler,
 		TLSConfig:            tls.Config{InsecureSkipVerify: true, ClientAuth: tls.NoClientCert},
 	}
 	connOpts.AddBroker("tcp://127.0.0.1:" + *mqttPort)
@@ -58,17 +59,17 @@ func (this *mqttDaemon)init(){
 /*
 从mqtt接受消息，并把消息转发到浏览器
 */
-func (this *mqttDaemon)onMessageReceivedFromMqtt(client mqtt.Client, message mqtt.Message) {
+func (this *mqttDaemon) onMessageReceivedFromMqtt(client mqtt.Client, message mqtt.Message) {
 	fmt.Printf("Received message on topic from mqtt: %s\n内容为: %s\n", message.Topic(), message.Payload())
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
 	this.aliveCount--
 }
 
-func (this *mqttDaemon)OnConnectHandler(client mqtt.Client){
+func (this *mqttDaemon) OnConnectHandler(client mqtt.Client) {
 	if token := client.Subscribe(*topic, byte(*qos), this.onMessageReceivedFromMqtt); token.Wait() && token.Error() != nil {
 		fmt.Println("订阅topic: " + *topic + "失败。" + token.Error().Error())
-	}else{
+	} else {
 		fmt.Println("订阅topic: " + *topic + "成功")
 		this.aliveCountMux.Lock()
 		defer this.aliveCountMux.Unlock()
@@ -76,14 +77,14 @@ func (this *mqttDaemon)OnConnectHandler(client mqtt.Client){
 	}
 }
 
-func (this *mqttDaemon)ConnectionLostHandler(client mqtt.Client, err error){
-	log.Println(time.Now(), "连接丢失" + err.Error())
+func (this *mqttDaemon) ConnectionLostHandler(client mqtt.Client, err error) {
+	log.Println(time.Now(), "连接丢失"+err.Error())
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
 	this.aliveCount = 999
 }
 
-func(this *mqttDaemon)conn(){
+func (this *mqttDaemon) conn() {
 	if token := this.client.Connect(); token.Wait() && token.Error() != nil {
 		log.Println("连接失败", time.Now(), token.Error())
 		panic("初次连接失败，禁止程序继续运行！")
@@ -92,22 +93,22 @@ func(this *mqttDaemon)conn(){
 	}
 }
 
-func (this *mqttDaemon)updateAlive(){
-	token :=this.client.Publish(*topic, 1, false, "alive")
-	if(token.Error() != nil){
+func (this *mqttDaemon) updateAlive() {
+	token := this.client.Publish(*topic, 1, false, "alive")
+	if token.Error() != nil {
 		fmt.Println(token.Error())
 	}
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
 	this.aliveCount++
-	fmt.Println(time.Now(), "updateAlive: " ,this.aliveCount)
+	fmt.Println(time.Now(), "updateAlive: ", this.aliveCount)
 }
 
-func (this* mqttDaemon)checkAlive()(bool){
-	fmt.Println(time.Now(), "aliveCount: " , this.aliveCount)
+func (this *mqttDaemon) checkAlive() bool {
+	fmt.Println(time.Now(), "aliveCount: ", this.aliveCount)
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
-	return this.aliveCount >3
+	return this.aliveCount > 3
 }
 
 func execCommand(commandName string, arg ...string) bool {
@@ -139,24 +140,18 @@ func execCommand(commandName string, arg ...string) bool {
 	return true
 }
 
-func (this* mqttDaemon)StartMqtt()(){
+func (this *mqttDaemon) StartMqtt() {
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
-	this.aliveCount = 0;
+	this.aliveCount = 0
 	//启动mqtt程序
 	log.Println(time.Now(), "重启mqtt服务")
-	execCommand("/bin/bash", "-c", *emqttShellPath + " start")
+	execCommand("/bin/bash", "-c", "docker restart emq20")
 	log.Println(time.Now(), "重启mqtt服务完成")
 }
 
-
-func (this* mqttDaemon)StopMqtt()(){
-	log.Println(time.Now(), "结束mqtt服务")
-	execCommand("/bin/bash", "-c", *emqttShellPath + " stop")
-	log.Println(time.Now(), "结束mqtt服务完成")
-}
-
 func main() {
+
 	flag.Parse()
 	log.SetFlags(0)
 	var damon mqttDaemon
@@ -164,10 +159,9 @@ func main() {
 	//死循环更新数据
 	for {
 		time.Sleep(3000 * time.Millisecond)
-		if(damon.checkAlive()){
-			damon.StopMqtt()
+		if damon.checkAlive() {
 			damon.StartMqtt()
 		}
 	}
-
 }
+

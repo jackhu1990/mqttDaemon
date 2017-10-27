@@ -29,12 +29,6 @@ type mqttDaemon struct {
 	aliveCountMux sync.Mutex
 }
 
-func (this *mqttDaemon) timerCheck() {
-	for {
-		time.Sleep(3000 * time.Millisecond)
-		this.updateAlive()
-	}
-}
 
 func (this *mqttDaemon) init() {
 	connOpts := &mqtt.ClientOptions{
@@ -53,7 +47,6 @@ func (this *mqttDaemon) init() {
 	connOpts.AddBroker("tcp://127.0.0.1:" + *mqttPort)
 	this.client = mqtt.NewClient(connOpts)
 	this.conn()
-	go this.timerCheck()
 }
 
 /*
@@ -79,9 +72,6 @@ func (this *mqttDaemon) OnConnectHandler(client mqtt.Client) {
 
 func (this *mqttDaemon) ConnectionLostHandler(client mqtt.Client, err error) {
 	log.Println(time.Now(), "连接丢失"+err.Error())
-	this.aliveCountMux.Lock()
-	defer this.aliveCountMux.Unlock()
-	this.aliveCount = 999
 }
 
 func (this *mqttDaemon) conn() {
@@ -94,14 +84,14 @@ func (this *mqttDaemon) conn() {
 }
 
 func (this *mqttDaemon) updateAlive() {
-	token := this.client.Publish(*topic, 1, false, "alive")
-	if token.Error() != nil {
-		fmt.Println(token.Error())
-	}
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
 	this.aliveCount++
 	fmt.Println(time.Now(), "updateAlive: ", this.aliveCount)
+	token := this.client.Publish(*topic, 1, false, "alive")
+	if token.Error() != nil {
+		fmt.Println(token.Error())
+	}
 }
 
 func (this *mqttDaemon) checkAlive() bool {
@@ -143,7 +133,7 @@ func execCommand(commandName string, arg ...string) bool {
 func (this *mqttDaemon) StartMqtt() {
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
-	this.aliveCount = 0
+	this.aliveCount = -10 //预留启动时间, 超时没有启动将继续重启
 	//启动mqtt程序
 	log.Println(time.Now(), "重启mqtt服务")
 	execCommand("/bin/bash", "-c", "docker restart emq20")
@@ -158,6 +148,7 @@ func main() {
 	damon.init()
 	//死循环更新数据
 	for {
+		damon.updateAlive()
 		time.Sleep(3000 * time.Millisecond)
 		if damon.checkAlive() {
 			damon.StartMqtt()

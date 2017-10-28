@@ -54,9 +54,6 @@ func (this *mqttDaemon) init() {
 */
 func (this *mqttDaemon) onMessageReceivedFromMqtt(client mqtt.Client, message mqtt.Message) {
 	fmt.Printf("Received message on topic from mqtt: %s\n内容为: %s\n", message.Topic(), message.Payload())
-	this.aliveCountMux.Lock()
-	defer this.aliveCountMux.Unlock()
-	this.aliveCount--
 }
 
 func (this *mqttDaemon) OnConnectHandler(client mqtt.Client) {
@@ -64,41 +61,30 @@ func (this *mqttDaemon) OnConnectHandler(client mqtt.Client) {
 		fmt.Println("订阅topic: " + *topic + "失败。" + token.Error().Error())
 	} else {
 		fmt.Println("订阅topic: " + *topic + "成功")
-		this.aliveCountMux.Lock()
-		defer this.aliveCountMux.Unlock()
-		this.aliveCount = 0
 	}
 }
 
 func (this *mqttDaemon) ConnectionLostHandler(client mqtt.Client, err error) {
 	log.Println(time.Now(), "连接丢失"+err.Error())
+	this.StartMqtt()
 }
 
 func (this *mqttDaemon) conn() {
 	if token := this.client.Connect(); token.Wait() && token.Error() != nil {
-		log.Println("连接失败", time.Now(), token.Error())
-		panic("初次连接失败，禁止程序继续运行！")
+		log.Println("初次连接失败, 启动mqtt", time.Now(), token.Error())
+		this.StartMqtt()
+		this.conn()
 	} else {
-		fmt.Printf("Connected to %s\n", *mqttPort)
+		log.Println("Connected to %s\n", *mqttPort)
 	}
 }
 
 func (this *mqttDaemon) updateAlive() {
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
-	this.aliveCount++
-	fmt.Println(time.Now(), "updateAlive: ", this.aliveCount)
-	token := this.client.Publish(*topic, 1, false, "alive")
-	if token.Error() != nil {
-		fmt.Println(token.Error())
+	if this.client.IsConnected(){
+		this.client.Publish(*topic, 1, false, "alive")
 	}
-}
-
-func (this *mqttDaemon) checkAlive() bool {
-	fmt.Println(time.Now(), "aliveCount: ", this.aliveCount)
-	this.aliveCountMux.Lock()
-	defer this.aliveCountMux.Unlock()
-	return this.aliveCount > 3
 }
 
 func execCommand(commandName string, arg ...string) bool {
@@ -133,7 +119,6 @@ func execCommand(commandName string, arg ...string) bool {
 func (this *mqttDaemon) StartMqtt() {
 	this.aliveCountMux.Lock()
 	defer this.aliveCountMux.Unlock()
-	this.aliveCount = -10 //预留启动时间, 超时没有启动将继续重启
 	//启动mqtt程序
 	log.Println(time.Now(), "重启mqtt服务")
 	execCommand("/bin/bash", "-c", "docker restart emq20")
@@ -150,9 +135,6 @@ func main() {
 	for {
 		damon.updateAlive()
 		time.Sleep(3000 * time.Millisecond)
-		if damon.checkAlive() {
-			damon.StartMqtt()
-		}
 	}
 }
 
